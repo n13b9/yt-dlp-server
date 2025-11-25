@@ -1,6 +1,7 @@
 const express = require('express');
 const infoRouter = require('./routes/info');
 const downloadRouter = require('./routes/download');
+const convertRoute = require('./routes/convert');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,6 +18,7 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/', infoRouter);
 app.use('/', downloadRouter);
+app.use('/', convertRoute);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

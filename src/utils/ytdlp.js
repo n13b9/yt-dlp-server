@@ -9,7 +9,16 @@ const { spawn } = require('child_process');
  */
 function getVideoInfo(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const args = ['--dump-json', '--no-warnings'];
+    const args = [
+      '--dump-json',
+      '--skip-download',
+      '--no-warnings',
+      '--no-call-home',
+      '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]'
+    ];
+    
+    
+    
     
     // Add proxy if provided
     if (options.proxy) {
