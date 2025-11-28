@@ -1,16 +1,15 @@
 # Use Node.js LTS version
 FROM node:18-slim
 
-# Install system dependencies
+# Install system dependencies AND yt-dlp (Debian package)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     curl \
     ffmpeg \
+    yt-dlp \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# Install yt-dlp
-RUN pip3 install --no-cache-dir yt-dlp
 
 # Verify yt-dlp installation
 RUN yt-dlp --version
@@ -32,4 +31,3 @@ EXPOSE ${PORT:-3000}
 
 # Start the application
 CMD ["node", "src/index.js"]
-
