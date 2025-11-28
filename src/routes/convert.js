@@ -1,6 +1,5 @@
 const express = require('express');
 const { spawn } = require('child_process');
-
 const router = express.Router();
 
 function classifyYtdlpError(stderr) {
@@ -15,7 +14,6 @@ function classifyYtdlpError(stderr) {
 router.all('/convert', async (req, res) => {
   const url = req.method === 'GET' ? req.query.url : req.body?.url;
   let format = req.method === 'GET' ? req.query.format : req.body?.format;
-
   if (!url) return res.status(400).json({ error: 'url is required' });
 
   format = format ? format.toLowerCase() : 'mp3';
@@ -24,36 +22,42 @@ router.all('/convert', async (req, res) => {
   }
 
   const proxy = process.env.PROXY_URL;
-  const ytArgs = ['-f', 'bestaudio/best', '-o', '-'];
-  if (proxy) ytArgs.push('--proxy', proxy);
+
+  const ytArgs = [
+    '-f', '140',
+    '--no-playlist',
+    '--no-warnings',
+    '--no-cache-dir',
+    '--youtube-skip-dash-manifest',
+    '--no-check-formats',
+    '--cookies-from-browser', 'chrome',
+    '-o', '-'
+  ];
+
+  if (proxy) {
+    ytArgs.push('--proxy', proxy);
+  }
   ytArgs.push(url);
 
   const yt = spawn('yt-dlp', ytArgs);
 
   const ffmpegArgs =
     format === 'mp3'
-      ? ['-i', 'pipe:0', '-vn', '-acodec', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', 'pipe:1']
-      : ['-i', 'pipe:0', '-vn', '-acodec', 'aac', '-b:a', '192k', '-f', 'ipod', 'pipe:1'];
+      ? ['-i', 'pipe:0', '-vn', '-acodec', 'libmp3lame', '-q:a', '4', '-threads', '0', '-f', 'mp3', 'pipe:1']
+      : ['-i', 'pipe:0', '-vn', '-acodec', 'aac', '-b:a', '128k', '-threads', '0', '-f', 'ipod', 'pipe:1'];
 
   const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 
   let ytError = '';
-  yt.stderr.on('data', chunk => {
-    const text = chunk.toString();
-    ytError += text;
-    console.error('yt-dlp:', text);
-  });
-
+  yt.stderr.on('data', c => ytError += c.toString());
   let ffmpegError = '';
-  ffmpeg.stderr.on('data', chunk => {
-    const text = chunk.toString();
-    ffmpegError += text;
-    console.error('ffmpeg:', text);
-  });
+  ffmpeg.stderr.on('data', c => ffmpegError += c.toString());
 
   yt.stdout.pipe(ffmpeg.stdin);
+
   res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'audio/mp4');
   res.setHeader('Content-Disposition', `attachment; filename="audio.${format}"`);
+
   ffmpeg.stdout.pipe(res);
 
   const killAll = () => {
