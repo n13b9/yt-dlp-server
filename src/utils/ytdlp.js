@@ -1,73 +1,81 @@
 const { spawn } = require('child_process');
 
-/**
- * Execute yt-dlp command and return JSON output
- * @param {string} url - Video URL
- * @param {Object} options - Additional options
- * @param {string} options.proxy - Proxy URL (optional)
- * @returns {Promise<Object>} - Parsed JSON output from yt-dlp
- */
 function getVideoInfo(url, options = {}) {
   return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const t = () => ((Date.now() - start) / 1000).toFixed(3) + 's';
+
+    console.error(`[${t()}] getVideoInfo() START for URL: ${url}`);
+
     const args = [
-      '--dump-json',
       '--skip-download',
+      '--simulate',
+      '--dump-single-json',
+      '--flat-playlist',
       '--no-warnings',
       '--no-call-home',
-      '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]'
+      '--no-check-certificate'
     ];
-    
-    
-    
-    
-    // Add proxy if provided
+
     if (options.proxy) {
       args.push('--proxy', options.proxy);
     }
-    
-    // Add the URL
+
     args.push(url);
-    
+
+    console.error(`[${t()}] USING YTDLP ARGS: ${args.join(" ")}`);
+    console.error(`[${t()}] Spawning yt-dlp process...`);
+
     const ytdlp = spawn('yt-dlp', args);
-    
+
     let stdout = '';
     let stderr = '';
-    
-    ytdlp.stdout.on('data', (data) => {
+    let firstStdout = false;
+    let firstStderr = false;
+
+    ytdlp.stdout.on('data', data => {
+      if (!firstStdout) {
+        console.error(`[${t()}] FIRST STDOUT (${data.length} bytes)`);
+        firstStdout = true;
+      }
       stdout += data.toString();
     });
-    
-    ytdlp.stderr.on('data', (data) => {
+
+    ytdlp.stderr.on('data', data => {
+      if (!firstStderr) {
+        console.error(`[${t()}] FIRST STDERR (${data.length} bytes)`);
+        firstStderr = true;
+      }
       stderr += data.toString();
     });
-    
-    ytdlp.on('close', (code) => {
+
+    ytdlp.on('close', code => {
+      console.error(`[${t()}] yt-dlp EXIT (code=${code})`);
+
       if (code !== 0) {
-        // Try to parse error message from stderr
-        const errorMsg = stderr.trim() || `yt-dlp process exited with code ${code}`;
-        reject(new Error(errorMsg));
-        return;
+        console.error(`[${t()}] STDERR:\n${stderr}`);
+        return reject(new Error(stderr || `yt-dlp exited with ${code}`));
       }
-      
+
+      console.error(`[${t()}] Parsing JSON...`);
+      const parseStart = Date.now();
+
       try {
-        const jsonData = JSON.parse(stdout);
-        resolve(jsonData);
-      } catch (parseError) {
-        reject(new Error(`Failed to parse yt-dlp output: ${parseError.message}`));
+        const json = JSON.parse(stdout);
+        const parseTime = ((Date.now() - parseStart) / 1000).toFixed(3);
+        console.error(`[${parseTime}s] JSON parsed`);
+        console.error(`[${t()}] getVideoInfo() FINISHED`);
+        resolve(json);
+      } catch (e) {
+        reject(new Error(`JSON parse failed: ${e.message}`));
       }
     });
-    
-    ytdlp.on('error', (error) => {
-      if (error.code === 'ENOENT') {
-        reject(new Error('yt-dlp not found. Please ensure yt-dlp is installed and in your PATH.'));
-      } else {
-        reject(error);
-      }
+
+    ytdlp.on('error', err => {
+      console.error(`[${t()}] Process ERROR: ${err.message}`);
+      reject(err);
     });
   });
 }
 
-module.exports = {
-  getVideoInfo
-};
-
+module.exports = { getVideoInfo };

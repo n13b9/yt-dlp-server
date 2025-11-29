@@ -27,6 +27,8 @@ router.all('/convert', async (req, res) => {
   const tmpInput = path.join('/tmp', `in-${Date.now()}.m4a`);
   const tmpOutput = path.join('/tmp', `out-${Date.now()}.${format}`);
 
+  const proxy = process.env.PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+
   const ytArgs = [
     '-f', '140',
     '--no-warnings',
@@ -34,6 +36,12 @@ router.all('/convert', async (req, res) => {
     '-o', tmpInput,
     url
   ];
+
+  if (proxy) {
+    ytArgs.push('--proxy', proxy);
+  }
+  
+  ytArgs.push(url);
 
   const yt = spawn('yt-dlp', ytArgs);
 
