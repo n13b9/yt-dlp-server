@@ -29,18 +29,31 @@ function cleanupOldFiles(maxAgeMs) {
 
 router.post('/download', async (req, res) => {
   try {
-    const { url } = req.body;
+    const { url, format } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required', code: 'MISSING_URL' });
+
+    let audioFormat = format ? format.toLowerCase() : 'mp3';
+    if (!['mp3', 'm4a'].includes(audioFormat)) {
+      return res.status(400).json({ error: 'Invalid format. Use mp3 or m4a', code: 'INVALID_FORMAT' });
+    }
 
     if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
     cleanupOldFiles(Number(process.env.DOWNLOAD_CLEANUP_MS || 1000 * 60 * 60));
 
-    const proxy = process.env.PROXY_URL;
+    const proxy = process.env.PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
-    const outputPath = path.join(DOWNLOAD_DIR, `${id}.mp4`);
+    const tmpInput = path.join('/tmp', `in-${Date.now()}.m4a`);
+    const outputPath = path.join(DOWNLOAD_DIR, `${id}.${audioFormat}`);
 
-    const ytArgs = ['-f', 'bestvideo+bestaudio/best', '-o', outputPath];
+    const ytArgs = [
+      '--no-warnings',
+      '--no-playlist',
+      '-x',
+      '--audio-format', 'm4a',
+      '-o', tmpInput
+    ];
+
     if (proxy) ytArgs.push('--proxy', proxy);
     ytArgs.push(url);
 
@@ -61,16 +74,32 @@ router.post('/download', async (req, res) => {
     yt.on('exit', exitCode => {
       clearTimeout(timeout);
 
-      if (exitCode !== 0) {
+      if (exitCode !== 0 || !fs.existsSync(tmpInput)) {
         const { code: errorCode, status: statusCode } = classifyYtdlpError(ytError);
         return res.status(statusCode).json({ error: ytError.trim() || 'yt-dlp failed', code: errorCode });
       }
 
-      if (!fs.existsSync(outputPath)) {
-        return res.status(500).json({ error: 'File not created', code: 'FILE_ERROR' });
-      }
+      const ffmpegArgs =
+        audioFormat === 'mp3'
+          ? ['-i', tmpInput, '-vn', '-acodec', 'libmp3lame', '-q:a', '3', '-threads', '0', outputPath]
+          : ['-i', tmpInput, '-vn', '-acodec', 'aac', '-b:a', '128k', '-threads', '0', outputPath];
 
-      res.json({ id, file_path: outputPath });
+      const ff = spawn('ffmpeg', ffmpegArgs);
+      let ffError = '';
+
+      ff.stderr.on('data', chunk => {
+        ffError += chunk.toString();
+      });
+
+      ff.on('exit', ffCode => {
+        fs.unlink(tmpInput, () => {});
+
+        if (ffCode !== 0 || !fs.existsSync(outputPath)) {
+          return res.status(500).json({ error: ffError.trim() || 'ffmpeg conversion failed', code: 'FFMPEG_ERROR' });
+        }
+
+        res.json({ id, file_path: outputPath, format: audioFormat });
+      });
     });
   } catch (err) {
     res.status(500).json({ error: err.message, code: 'UNKNOWN_ERROR' });
@@ -79,7 +108,15 @@ router.post('/download', async (req, res) => {
 
 router.get('/download/:id', (req, res) => {
   const id = req.params.id;
-  const filePath = path.join(DOWNLOAD_DIR, `${id}.mp4`);
+  
+  let filePath = path.join(DOWNLOAD_DIR, `${id}.mp3`);
+  let contentType = 'audio/mpeg';
+  
+  if (!fs.existsSync(filePath)) {
+    filePath = path.join(DOWNLOAD_DIR, `${id}.m4a`);
+    contentType = 'audio/mp4';
+  }
+  
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found', code: 'FILE_NOT_FOUND' });
   }
@@ -89,7 +126,7 @@ router.get('/download/:id', (req, res) => {
 
   const range = req.headers.range;
   if (!range) {
-    res.writeHead(200, { 'Content-Length': total, 'Content-Type': 'video/mp4' });
+    res.writeHead(200, { 'Content-Length': total, 'Content-Type': contentType });
     return fs.createReadStream(filePath).pipe(res);
   }
 
@@ -108,7 +145,7 @@ router.get('/download/:id', (req, res) => {
     'Content-Range': `bytes ${start}-${end}/${total}`,
     'Accept-Ranges': 'bytes',
     'Content-Length': chunkSize,
-    'Content-Type': 'video/mp4'
+    'Content-Type': contentType
   });
 
   file.pipe(res);
