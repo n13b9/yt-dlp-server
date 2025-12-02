@@ -22,6 +22,7 @@ router.all('/convert', async (req, res) => {
 
   const url = req.method === 'GET' ? req.query.url : req.body?.url;
   let format = req.method === 'GET' ? req.query.format : req.body?.format;
+  const proxyParam = req.method === 'GET' ? req.query.proxy : req.body?.proxy;
 
   process.stderr.write(`[${t()}] Request - URL: ${url}, Format: ${format || 'mp3'}\n`);
 
@@ -41,7 +42,13 @@ router.all('/convert', async (req, res) => {
 
   process.stderr.write(`[${t()}] Temp files - Input: ${tmpInput}, Output: ${tmpOutput}\n`);
 
-  const proxy = process.env.PROXY_URL || process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+  const proxy =
+    proxyParam ||
+    process.env.PROXY_URL ||
+    process.env.HTTP_PROXY ||
+    process.env.HTTPS_PROXY ||
+    null;
+  
   process.stderr.write(`[${t()}] Proxy: ${proxy || 'none'}\n`);
 
   const ytArgs = [
@@ -55,7 +62,6 @@ router.all('/convert', async (req, res) => {
   if (proxy) ytArgs.push('--proxy', proxy);
   
   ytArgs.push(url);
-  
 
   process.stderr.write(`[${t()}] Starting yt-dlp download...\n`);
   process.stderr.write(`[${t()}] yt-dlp args: ${ytArgs.join(' ')}\n`);

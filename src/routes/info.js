@@ -29,13 +29,14 @@ function curateVideoInfo(info) {
 
 router.get('/info', async (req, res) => {
   try {
-    const { url, full } = req.query;
+    const { url, full, proxy: proxyParam } = req.query;
 
     if (!url || typeof url !== 'string' || url.trim().length < 5) {
       return res.status(400).json({ error: 'Invalid or missing URL', code: 'MISSING_URL' });
     }
 
     const proxy =
+      proxyParam ||
       process.env.PROXY_URL ||
       process.env.HTTP_PROXY ||
       process.env.HTTPS_PROXY ||
